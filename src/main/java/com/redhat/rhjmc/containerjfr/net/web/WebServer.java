@@ -139,28 +139,28 @@ public class WebServer implements ConnectionListener {
                     .end(payload);
         };
 
-        router.get("/clienturl").handler(this::handleClientUrlRequest).failureHandler(failureHandler);
+        router.get("/clienturl")
+            .handler(this::handleClientUrlRequest)
+            .failureHandler(failureHandler);
 
-        router.get("/grafana_datasource_url").handler(this::handleGrafanaDatasourceUrlRequest)
-                .failureHandler(failureHandler);
+        router.get("/grafana_datasource_url")
+            .handler(this::handleGrafanaDatasourceUrlRequest)
+            .failureHandler(failureHandler);
 
-        router.get("/grafana_dashboard_url").handler(this::handleGrafanaDashboardUrlRequest)
-                .failureHandler(failureHandler);
+        router.get("/grafana_dashboard_url")
+            .handler(this::handleGrafanaDashboardUrlRequest)
+            .failureHandler(failureHandler);
 
-        router.get("/recordings/:name").blockingHandler(ctx -> {
-            String recordingName = ctx.pathParam("name");
-            if (recordingName != null && recordingName.endsWith(".jfr")) {
-                recordingName = recordingName.substring(0, recordingName.length() - 4);
-            }
-            handleRecordingDownloadRequest(recordingName, ctx);
-        }, false).failureHandler(failureHandler);
+        router.get("/recordings/:name")
+            .blockingHandler(this::handleRecordingDownloadRequest, false)
+            .failureHandler(failureHandler);
 
         router.get("/reports/:name")
-                .blockingHandler(ctx -> this.handleReportPageRequest(ctx.pathParam("name"), ctx))
-                .failureHandler(failureHandler);
+            .blockingHandler(this::handleReportPageRequest)
+            .failureHandler(failureHandler);
 
         router.get("/*")
-                .handler(StaticHandler.create(WebServer.class.getPackageName().replaceAll("\\.", "/")));
+            .handler(StaticHandler.create(WebServer.class.getPackageName().replaceAll("\\.", "/")));
 
         this.server.requestHandler(req -> {
             Instant start = Instant.now();
@@ -316,7 +316,8 @@ public class WebServer implements ConnectionListener {
         endWithJsonKeyValue("grafanaDashboardUrl", env.getEnv(GRAFANA_DASHBOARD_ENV, ""), ctx.response());
     }
 
-    void handleRecordingDownloadRequest(String recordingName, RoutingContext ctx) {
+    void handleRecordingDownloadRequest(RoutingContext ctx) {
+        String recordingName = getRecordingNameFromContext(ctx);
         try {
             Optional<DownloadDescriptor> descriptor = getDownloadDescriptor(recordingName);
             if (descriptor.isEmpty()) {
@@ -325,7 +326,7 @@ public class WebServer implements ConnectionListener {
 
             ctx.response().setChunked(true);
             ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, MIME_TYPE_OCTET_STREAM);
-            ctx.response().endHandler((e) -> downloadCounts.merge(recordingName, 1, Integer::sum));
+            ctx.response().endHandler(e -> downloadCounts.merge(recordingName, 1, Integer::sum));
             descriptor.get().bytes.ifPresent(b -> ctx.response().putHeader(HttpHeaders.CONTENT_LENGTH, Long.toString(b)));
             try (InputStream stream = descriptor.get().stream) {
                 if (env.hasEnv(USE_LOW_MEM_PRESSURE_STREAMING_ENV)) {
@@ -342,7 +343,8 @@ public class WebServer implements ConnectionListener {
         }
     }
 
-    void handleReportPageRequest(String recordingName, RoutingContext ctx) {
+    void handleReportPageRequest(RoutingContext ctx) {
+        String recordingName = getRecordingNameFromContext(ctx);
         try {
             Optional<DownloadDescriptor> descriptor = getDownloadDescriptor(recordingName);
             if (descriptor.isEmpty()) {
@@ -361,6 +363,14 @@ public class WebServer implements ConnectionListener {
         } catch (IOException e) {
             throw new HttpStatusException(500, e);
         }
+    }
+
+    private static String getRecordingNameFromContext(RoutingContext ctx) {
+        String name = ctx.pathParam("name");
+        if (name != null && name.endsWith(".jfr")) {
+            name = name.substring(0, name.length() - 4);
+        }
+        return name.trim();
     }
 
     private static class DownloadDescriptor {
