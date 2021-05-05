@@ -37,6 +37,8 @@
  */
 package io.cryostat;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Set;
@@ -69,6 +71,15 @@ import com.google.gson.GsonBuilder;
 import dagger.Module;
 import dagger.Provides;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.exporter.logging.LoggingSpanExporter;
+import io.opentelemetry.exporter.logging.otlp.OtlpJsonLoggingSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import io.opentelemetry.sdk.trace.samplers.Sampler;
 
 @Module(
         includes = {
@@ -147,5 +158,49 @@ public abstract class MainModule {
         String archivePath = env.getEnv("CRYOSTAT_ARCHIVE_PATH", "/flightrecordings");
         logger.info("Local save path for flight recordings set as {}", archivePath);
         return Paths.get(archivePath);
+    }
+
+    @Provides
+    @Singleton
+    @Named(CONF_DIR)
+    static Path provideConfigurationPath(Environment env) {
+        Path path = Paths.get(env.getEnv(CONF_DIR)).resolve("conf");
+        try {
+            Files.createDirectory(path);
+            return path;
+        } catch (IOException ioe) {
+            throw new RuntimeException(ioe);
+        }
+    }
+
+    @Provides
+    @Singleton
+    public static OpenTelemetry provideOpenTelemetry() {
+        SdkTracerProvider sdkTracerProvider =
+                SdkTracerProvider.builder()
+                        .setSampler(Sampler.alwaysOn())
+                        .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
+                        .build();
+
+        return OpenTelemetrySdk.builder()
+                .setTracerProvider(sdkTracerProvider)
+                .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                .buildAndRegisterGlobal();
+    }
+
+    @Deprecated
+    public static OpenTelemetry nonDIProvideOpenTelemetry() {
+        SdkTracerProvider sdkTracerProvider =
+                SdkTracerProvider.builder()
+                        .setSampler(Sampler.alwaysOn())
+                        .addSpanProcessor(
+                                SimpleSpanProcessor.create(OtlpJsonLoggingSpanExporter.create()))
+                        // .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
+                        .build();
+
+        return OpenTelemetrySdk.builder()
+                .setTracerProvider(sdkTracerProvider)
+                .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                .build();
     }
 }

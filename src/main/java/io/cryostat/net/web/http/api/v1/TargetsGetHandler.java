@@ -50,6 +50,9 @@ import io.cryostat.net.web.http.api.ApiVersion;
 import io.cryostat.platform.PlatformClient;
 
 import com.google.gson.Gson;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
@@ -58,12 +61,14 @@ class TargetsGetHandler extends AbstractAuthenticatedRequestHandler {
 
     private final PlatformClient platformClient;
     private final Gson gson;
+    private final Tracer tracer;
 
     @Inject
     TargetsGetHandler(AuthManager auth, PlatformClient platformClient, Gson gson) {
         super(auth);
         this.platformClient = platformClient;
         this.gson = gson;
+        this.tracer = telemetry.getTracer(getClass().getCanonicalName());
     }
 
     @Override
@@ -93,7 +98,12 @@ class TargetsGetHandler extends AbstractAuthenticatedRequestHandler {
 
     @Override
     public void handleAuthenticated(RoutingContext ctx) throws Exception {
-        ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime());
-        ctx.response().end(gson.toJson(this.platformClient.listDiscoverableServices()));
+        Span span = tracer.spanBuilder("WebServer Request Handler").startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime());
+            ctx.response().end(gson.toJson(this.platformClient.listDiscoverableServices()));
+        } finally {
+            span.end();
+        }
     }
 }
