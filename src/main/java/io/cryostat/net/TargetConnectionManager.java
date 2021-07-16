@@ -46,18 +46,19 @@ import java.util.regex.Pattern;
 
 import javax.management.remote.JMXServiceURL;
 
-import io.cryostat.core.log.Logger;
-import io.cryostat.core.net.Credentials;
-import io.cryostat.core.net.JFRConnection;
-import io.cryostat.core.net.JFRConnectionToolkit;
-
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.Scheduler;
+
 import dagger.Lazy;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.cryostat.core.log.Logger;
+import io.cryostat.core.net.Credentials;
+import io.cryostat.core.net.JFRConnection;
+import io.cryostat.core.net.JFRConnectionToolkit;
+import io.micrometer.core.instrument.Metrics;
 import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.Label;
@@ -125,7 +126,15 @@ public class TargetConnectionManager {
 
     public <T> T executeConnectedTask(
             ConnectionDescriptor connectionDescriptor, ConnectedTask<T> task) throws Exception {
-        return task.execute(connections.get(connectionDescriptor));
+        return Metrics.timer("targetconnectionmanager.execute", "target",
+                connectionDescriptor.getTargetId()).record(() -> {
+            try {
+                return task.execute(connections.get(connectionDescriptor));
+            } catch (Exception e) {
+                logger.error(e);
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     /**

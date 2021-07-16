@@ -51,14 +51,15 @@ import java.util.concurrent.TimeoutException;
 
 import javax.inject.Named;
 
+import com.google.gson.Gson;
+
 import io.cryostat.core.log.Logger;
 import io.cryostat.core.sys.Environment;
 import io.cryostat.messaging.notifications.NotificationFactory;
 import io.cryostat.net.AuthManager;
 import io.cryostat.net.HttpServer;
 import io.cryostat.net.web.http.HttpMimeType;
-
-import com.google.gson.Gson;
+import io.micrometer.core.instrument.Metrics;
 
 public class MessagingServer implements AutoCloseable {
 
@@ -167,6 +168,7 @@ public class MessagingServer implements AutoCloseable {
     }
 
     public void writeMessage(WsMessage message) {
+        Metrics.counter("messagingserver.write").increment();
         String json = gson.toJson(message);
         logger.info("Outgoing WS message: {}", json);
         synchronized (connections) {

@@ -69,6 +69,7 @@ import io.cryostat.util.HttpStatusCodeIdentifier;
 
 import com.google.gson.Gson;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.micrometer.core.instrument.Metrics;
 import io.vertx.core.Handler;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.ext.web.Route;
@@ -207,33 +208,41 @@ public class WebServer {
 
         this.server.requestHandler(
                 req -> {
-                    Instant start = Instant.now();
+                    Metrics.timer("webserver.request", "path", req.path())
+                            .record(
+                                    () -> {
+                                        Instant start = Instant.now();
 
-                    WebServerRequest evt =
-                            new WebServerRequest(
-                                    req.remoteAddress().host(),
-                                    req.remoteAddress().port(),
-                                    req.method().toString(),
-                                    req.path());
-                    evt.begin();
+                                        WebServerRequest evt =
+                                                new WebServerRequest(
+                                                        req.remoteAddress().host(),
+                                                        req.remoteAddress().port(),
+                                                        req.method().toString(),
+                                                        req.path());
+                                        evt.begin();
 
-                    req.response()
-                            .endHandler(
-                                    (res) -> {
-                                        logger.info(
-                                                "({}): {} {} {} {}ms",
-                                                req.remoteAddress().toString(),
-                                                req.method().toString(),
-                                                req.path(),
-                                                req.response().getStatusCode(),
-                                                Duration.between(start, Instant.now()).toMillis());
-                                        evt.setStatusCode(req.response().getStatusCode());
-                                        evt.end();
-                                        if (evt.shouldCommit()) {
-                                            evt.commit();
-                                        }
+                                        req.response()
+                                                .endHandler(
+                                                        (res) -> {
+                                                            logger.info(
+                                                                    "({}): {} {} {} {}ms",
+                                                                    req.remoteAddress().toString(),
+                                                                    req.method().toString(),
+                                                                    req.path(),
+                                                                    req.response().getStatusCode(),
+                                                                    Duration.between(
+                                                                                    start,
+                                                                                    Instant.now())
+                                                                            .toMillis());
+                                                            evt.setStatusCode(
+                                                                    req.response().getStatusCode());
+                                                            evt.end();
+                                                            if (evt.shouldCommit()) {
+                                                                evt.commit();
+                                                            }
+                                                        });
+                                        router.handle(req);
                                     });
-                    router.handle(req);
                 });
     }
 

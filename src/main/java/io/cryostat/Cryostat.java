@@ -37,8 +37,11 @@
  */
 package io.cryostat;
 
+import java.time.Duration;
+
 import javax.inject.Singleton;
 
+import dagger.Component;
 import io.cryostat.commands.CommandExecutor;
 import io.cryostat.configuration.CredentialsManager;
 import io.cryostat.core.CryostatCore;
@@ -50,8 +53,9 @@ import io.cryostat.net.web.WebServer;
 import io.cryostat.platform.PlatformClient;
 import io.cryostat.rules.RuleProcessor;
 import io.cryostat.rules.RuleRegistry;
-
-import dagger.Component;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.logging.LoggingMeterRegistry;
+import io.micrometer.core.instrument.logging.LoggingRegistryConfig;
 
 class Cryostat {
 
@@ -60,6 +64,20 @@ class Cryostat {
 
         final Logger logger = Logger.INSTANCE;
         final Environment environment = new Environment();
+
+        Metrics.addRegistry(LoggingMeterRegistry.builder(new LoggingRegistryConfig() {
+
+            @Override
+            public String get(String arg0) {
+                return null;
+            }
+
+            @Override
+            public Duration step() {
+                return Duration.ofSeconds(30);
+            }
+
+        }).loggingSink(logger::info).build());
 
         logger.trace("env: {}", environment.getEnv().toString());
 
