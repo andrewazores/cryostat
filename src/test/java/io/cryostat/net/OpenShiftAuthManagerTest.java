@@ -239,7 +239,7 @@ class OpenShiftAuthManagerTest {
     @ParameterizedTest
     @EnumSource(
             mode = EnumSource.Mode.MATCH_ANY,
-            names = "^([a-zA-Z]+_(RECORDING|TARGET|CERTIFICATE|CREDENTIALS))$")
+            names = "^([a-zA-Z]+_(RECORDING|TARGET|CERTIFICATE))$")
     void shouldValidateExpectedPermissionsPerSecuredResource(ResourceAction resourceAction)
             throws Exception {
         Mockito.when(fs.readFile(Paths.get(Config.KUBERNETES_NAMESPACE_PATH)))
@@ -264,9 +264,7 @@ class OpenShiftAuthManagerTest {
         } else if (resourceAction.getResource() == ResourceType.RECORDING) {
             expectedResources = Set.of("recordings");
         } else if (resourceAction.getResource() == ResourceType.CERTIFICATE) {
-            expectedResources = Set.of("deployments", "pods", "cryostats");
-        } else if (resourceAction.getResource() == ResourceType.CREDENTIALS) {
-            expectedResources = Set.of("cryostats");
+            expectedResources = Set.of("deployments", "pods");
         } else {
             throw new IllegalArgumentException(resourceAction.getResource().toString());
         }
@@ -340,10 +338,9 @@ class OpenShiftAuthManagerTest {
     @EnumSource(
             mode = EnumSource.Mode.MATCH_ALL,
             names = {
-                "^[a-zA-Z]+_(?!TARGET).*$",
                 "^[a-zA-Z]+_(?!RECORDING).*$",
+                "^[a-zA-Z]+_(?!TARGET).*$",
                 "^[a-zA-Z]+_(?!CERTIFICATE).*$",
-                "^[a-zA-Z]+_(?!CREDENTIALS).*$"
             })
     void shouldValidateExpectedPermissionsForUnsecuredResources(ResourceAction resourceAction)
             throws Exception {

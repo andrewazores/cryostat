@@ -267,9 +267,8 @@ public class OpenShiftAuthManager extends AbstractAuthManager {
             case RECORDING:
                 return Set.of("recordings");
             case CERTIFICATE:
-                return Set.of("deployments", "pods", "cryostats");
+                return Set.of("deployments", "pods");
             case CREDENTIALS:
-                return Set.of("cryostats");
             case TEMPLATE:
             case REPORT:
             case RULE:
