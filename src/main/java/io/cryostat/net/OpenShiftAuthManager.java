@@ -262,12 +262,11 @@ public class OpenShiftAuthManager extends AbstractAuthManager {
 
     private static Set<String> map(ResourceType resource) {
         switch (resource) {
-            case TARGET:
-                return Set.of("flightrecorders");
             case RECORDING:
                 return Set.of("recordings");
             case CERTIFICATE:
                 return Set.of("deployments", "pods");
+            case TARGET:
             case CREDENTIALS:
             case TEMPLATE:
             case REPORT:
