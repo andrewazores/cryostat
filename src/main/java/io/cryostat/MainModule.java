@@ -76,7 +76,9 @@ import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.exporter.logging.LoggingSpanExporter;
 import io.opentelemetry.exporter.logging.otlp.OtlpJsonLoggingSpanExporter;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.extension.jfr.JfrSpanProcessor;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
@@ -176,26 +178,33 @@ public abstract class MainModule {
     @Provides
     @Singleton
     public static OpenTelemetry provideOpenTelemetry() {
-        SdkTracerProvider sdkTracerProvider =
-                SdkTracerProvider.builder()
-                        .setSampler(Sampler.alwaysOn())
-                        .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
-                        .build();
+        // SdkTracerProvider sdkTracerProvider =
+        //         SdkTracerProvider.builder()
+        //                 .setSampler(Sampler.alwaysOn())
+        //                 .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
+        //                 .build();
 
-        return OpenTelemetrySdk.builder()
-                .setTracerProvider(sdkTracerProvider)
-                .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-                .buildAndRegisterGlobal();
+        // return OpenTelemetrySdk.builder()
+        //         .setTracerProvider(sdkTracerProvider)
+        //
+        // .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+        //         .buildAndRegisterGlobal();
+        return nonDIProvideOpenTelemetry();
     }
 
     @Deprecated
     public static OpenTelemetry nonDIProvideOpenTelemetry() {
+        OtlpGrpcSpanExporter otlpExporter =
+                OtlpGrpcSpanExporter.builder().setEndpoint("http://localhost:4317").build();
+
         SdkTracerProvider sdkTracerProvider =
                 SdkTracerProvider.builder()
                         .setSampler(Sampler.alwaysOn())
+                        .addSpanProcessor(new JfrSpanProcessor())
                         .addSpanProcessor(
                                 SimpleSpanProcessor.create(OtlpJsonLoggingSpanExporter.create()))
-                        // .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
+                        .addSpanProcessor(SimpleSpanProcessor.create(new LoggingSpanExporter()))
+                        .addSpanProcessor(SimpleSpanProcessor.create(otlpExporter))
                         .build();
 
         return OpenTelemetrySdk.builder()

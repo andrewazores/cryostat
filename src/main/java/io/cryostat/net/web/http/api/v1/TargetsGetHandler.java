@@ -56,6 +56,7 @@ import io.opentelemetry.context.Scope;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
+import jdk.jfr.Event;
 
 class TargetsGetHandler extends AbstractAuthenticatedRequestHandler {
 
@@ -99,11 +100,19 @@ class TargetsGetHandler extends AbstractAuthenticatedRequestHandler {
     @Override
     public void handleAuthenticated(RoutingContext ctx) throws Exception {
         Span span = tracer.spanBuilder("WebServer Request Handler").startSpan();
+        TargetsGetEvent event = new TargetsGetEvent();
+        event.begin();
         try (Scope scope = span.makeCurrent()) {
             ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime());
             ctx.response().end(gson.toJson(this.platformClient.listDiscoverableServices()));
+            event.end();
         } finally {
             span.end();
+            if (event.shouldCommit()) {
+                event.commit();
+            }
         }
     }
+
+    static class TargetsGetEvent extends Event {}
 }
