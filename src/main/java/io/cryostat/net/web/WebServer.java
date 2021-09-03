@@ -243,27 +243,27 @@ public class WebServer {
                                     req.path());
                     evt.begin();
                     Span span = tracer.spanBuilder("WebServer Request Handler").startSpan();
-                    Scope scope = span.makeCurrent();
-
-                    req.response()
-                            .endHandler(
-                                    (res) -> {
-                                        logger.info(
-                                                "({}): {} {} {} {}ms",
-                                                req.remoteAddress().toString(),
-                                                req.method().toString(),
-                                                req.path(),
-                                                req.response().getStatusCode(),
-                                                Duration.between(start, Instant.now()).toMillis());
-                                        evt.setStatusCode(req.response().getStatusCode());
-                                        evt.end();
-                                        if (evt.shouldCommit()) {
-                                            evt.commit();
-                                        }
-                                        span.end();
-                                        scope.close();
-                                    });
-                    router.handle(req);
+                    try (Scope scope = span.makeCurrent()) {
+                        req.response()
+                                .endHandler(
+                                        (res) -> {
+                                            logger.info(
+                                                    "({}): {} {} {} {}ms",
+                                                    req.remoteAddress().toString(),
+                                                    req.method().toString(),
+                                                    req.path(),
+                                                    req.response().getStatusCode(),
+                                                    Duration.between(start, Instant.now()).toMillis());
+                                            evt.setStatusCode(req.response().getStatusCode());
+                                            evt.end();
+                                            if (evt.shouldCommit()) {
+                                                evt.commit();
+                                            }
+                                        });
+                        router.handle(req);
+                    } finally {
+                        span.end();
+                    }
                 });
     }
 

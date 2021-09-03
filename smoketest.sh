@@ -15,6 +15,21 @@ function runCryostat() {
         exec "$DIR/run.sh"
 }
 
+function runOtel() {
+    podman run \
+        --name jaeger \
+        --pod cryostat \
+        --rm -d \
+        jaegertracing/all-in-one:latest
+
+    podman run \
+        --name otel \
+        --pod cryostat \
+        --mount type=bind,source=./otel-collector-config.yaml,destination=/etc/otel-collector-config.yaml,ro=true \
+        --rm -d \
+        otel/opentelemetry-collector:latest --config=/etc/otel-collector-config.yaml
+}
+
 function runDemoApps() {
     podman run \
         --name vertx-fib-demo-1 \
@@ -97,7 +112,13 @@ function createPod() {
         --publish 9999:9999 \
         --publish 8082:8082 \
         --publish 9990:9990 \
-        --publish 9991:9991
+        --publish 9991:9991 \
+        --publish 16686:16686 \
+        --publish 14268:14268 \
+        --publish 14250:14250 \
+        --publish 13133:13133 \
+        --publish 4317:4317 \
+        --publish 55681:55681
     # 8081: vertx-fib-demo
     # 9093: vertx-fib-demo-1 RJMX
     # 9094: vertx-fib-demo-2 RJMX
@@ -107,6 +128,9 @@ function createPod() {
     # 8082: Wildfly HTTP
     # 9990: Wildfly Admin Console
     # 9990: Wildfly RJMX
+
+    # 16686, 14268, 14250: Jaeger
+    # 13133, 4317, 55681: OTel
 }
 
 function destroyPod() {
@@ -116,6 +140,7 @@ function destroyPod() {
 trap destroyPod EXIT
 
 createPod
+runOtel
 runDemoApps
 runJfrDatasource
 runGrafana
