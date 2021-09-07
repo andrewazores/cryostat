@@ -157,8 +157,7 @@ public class WebServer {
                         }
 
                         if (exception.getStatusCode() == 401) {
-                            ctx.response()
-                                    .putHeader(AUTH_SCHEME_HEADER, auth.getScheme().toString());
+                            ctx.response().putHeader(AUTH_SCHEME_HEADER, auth.getScheme().toString());
                         }
 
                         ctx.response().setStatusCode(exception.getStatusCode());
@@ -184,21 +183,19 @@ public class WebServer {
                                         " caused by " + ExceptionUtils.getRootCauseMessage(exception);
                             }
 
-                            // kept for V1 API handler compatibility
                             String accept = ctx.request().getHeader(HttpHeaders.ACCEPT);
-                            if (accept.contains(HttpMimeType.JSON.mime())
+                            if (accept != null
+                                    && accept.contains(HttpMimeType.JSON.mime())
                                     && accept.indexOf(HttpMimeType.JSON.mime())
                                             < accept.indexOf(HttpMimeType.PLAINTEXT.mime())) {
                                 ctx.response()
-                                        .putHeader(
-                                                HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime())
+                                        .putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime())
                                         .end(gson.toJson(Map.of("message", payload)));
                                 return;
                             }
 
                             ctx.response()
-                                    .putHeader(
-                                            HttpHeaders.CONTENT_TYPE, HttpMimeType.PLAINTEXT.mime())
+                                    .putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.PLAINTEXT.mime())
                                     .end(payload);
                         }
                     } finally {
@@ -243,27 +240,24 @@ public class WebServer {
                                     req.path());
                     evt.begin();
                     Span span = tracer.spanBuilder("WebServer Request Handler").startSpan();
-                    try (Scope scope = span.makeCurrent()) {
-                        req.response()
-                                .endHandler(
-                                        (res) -> {
-                                            logger.info(
-                                                    "({}): {} {} {} {}ms",
-                                                    req.remoteAddress().toString(),
-                                                    req.method().toString(),
-                                                    req.path(),
-                                                    req.response().getStatusCode(),
-                                                    Duration.between(start, Instant.now()).toMillis());
-                                            evt.setStatusCode(req.response().getStatusCode());
-                                            evt.end();
-                                            if (evt.shouldCommit()) {
-                                                evt.commit();
-                                            }
-                                        });
+                    req.response()
+                            .endHandler(
+                                    (res) -> {
+                                        logger.info(
+                                                "({}): {} {} {} {}ms",
+                                                req.remoteAddress().toString(),
+                                                req.method().toString(),
+                                                req.path(),
+                                                req.response().getStatusCode(),
+                                                Duration.between(start, Instant.now()).toMillis());
+                                        evt.setStatusCode(req.response().getStatusCode());
+                                        evt.end();
+                                        if (evt.shouldCommit()) {
+                                            evt.commit();
+                                        }
+                                        span.end();
+                                    });
                         router.handle(req);
-                    } finally {
-                        span.end();
-                    }
                 });
     }
 

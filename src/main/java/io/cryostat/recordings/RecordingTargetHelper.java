@@ -42,21 +42,25 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.openjdk.jmc.common.unit.IConstrainedMap;
 import org.openjdk.jmc.flightrecorder.configuration.events.EventOptionID;
 import org.openjdk.jmc.flightrecorder.configuration.recording.RecordingOptionsBuilder;
 import org.openjdk.jmc.rjmx.services.jfr.IEventTypeInfo;
 import org.openjdk.jmc.rjmx.services.jfr.IRecordingDescriptor;
 
+import io.cryostat.MainModule;
 import io.cryostat.core.net.JFRConnection;
 import io.cryostat.core.templates.TemplateType;
 import io.cryostat.messaging.notifications.NotificationFactory;
 import io.cryostat.net.ConnectionDescriptor;
 import io.cryostat.net.TargetConnectionManager;
 import io.cryostat.net.web.http.HttpMimeType;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 
 public class RecordingTargetHelper {
 
@@ -68,6 +72,8 @@ public class RecordingTargetHelper {
     private final TargetConnectionManager targetConnectionManager;
     private final EventOptionsBuilder.Factory eventOptionsBuilderFactory;
     private final NotificationFactory notificationFactory;
+    protected final OpenTelemetry telemetry;
+    protected final Tracer tracer;
 
     RecordingTargetHelper(
             TargetConnectionManager targetConnectionManager,
@@ -76,6 +82,8 @@ public class RecordingTargetHelper {
         this.targetConnectionManager = targetConnectionManager;
         this.eventOptionsBuilderFactory = eventOptionsBuilderFactory;
         this.notificationFactory = notificationFactory;
+        this.telemetry = MainModule.nonDIProvideOpenTelemetry();
+        this.tracer = telemetry.getTracer(getClass().getCanonicalName());
     }
 
     public IRecordingDescriptor startRecording(
@@ -85,43 +93,52 @@ public class RecordingTargetHelper {
             String templateName,
             TemplateType templateType)
             throws Exception {
-        String recordingName = (String) recordingOptions.get(RecordingOptionsBuilder.KEY_NAME);
-        return targetConnectionManager.executeConnectedTask(
-                connectionDescriptor,
-                connection -> {
-                    Optional<IRecordingDescriptor> previous =
-                            getDescriptorByName(connection, recordingName);
-                    if (previous.isPresent()) {
-                        if (!restart) {
-                            throw new IllegalArgumentException(
-                                    String.format(
-                                            "Recording with name \"%s\" already exists",
-                                            recordingName));
-                        } else {
-                            connection.getService().close(previous.get());
+        Span span = tracer.spanBuilder("RecordingTargetHelper startRecording").startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            String recordingName = (String) recordingOptions.get(RecordingOptionsBuilder.KEY_NAME);
+            return targetConnectionManager.executeConnectedTask(
+                    connectionDescriptor,
+                    connection -> {
+                        Span connectionSpan = tracer.spanBuilder("RecordingTargetHelper connection").startSpan();
+                        try (Scope connectionScope = connectionSpan.makeCurrent()) {
+                            Optional<IRecordingDescriptor> previous =
+                                    getDescriptorByName(connection, recordingName);
+                            if (previous.isPresent()) {
+                                if (!restart) {
+                                    throw new IllegalArgumentException(
+                                            String.format(
+                                                    "Recording with name \"%s\" already exists",
+                                                    recordingName));
+                                } else {
+                                    connection.getService().close(previous.get());
+                                }
+                            }
+                            IRecordingDescriptor desc =
+                                    connection
+                                            .getService()
+                                            .start(
+                                                    recordingOptions,
+                                                    enableEvents(connection, templateName, templateType));
+                            notificationFactory
+                                    .createBuilder()
+                                    .metaCategory(NOTIFICATION_CATEGORY)
+                                    .metaType(HttpMimeType.JSON)
+                                    .message(
+                                            Map.of(
+                                                    "recording",
+                                                    recordingName,
+                                                    "target",
+                                                    connectionDescriptor.getTargetId()))
+                                    .build()
+                                    .send();
+                            return desc;
+                        } finally {
+                            connectionSpan.end();
                         }
-                    }
-                    IRecordingDescriptor desc =
-                            connection
-                                    .getService()
-                                    .start(
-                                            recordingOptions,
-                                            enableEvents(connection, templateName, templateType));
-                    notificationFactory
-                            .createBuilder()
-                            .metaCategory(NOTIFICATION_CATEGORY)
-                            .metaType(HttpMimeType.JSON)
-                            .message(
-                                    Map.of(
-                                            "recording",
-                                            recordingName,
-                                            "target",
-                                            connectionDescriptor.getTargetId()))
-                            .build()
-                            .send();
-                    return desc;
-                },
-                false);
+                    });
+        } finally {
+            span.end();
+        }
     }
 
     public IRecordingDescriptor startRecording(

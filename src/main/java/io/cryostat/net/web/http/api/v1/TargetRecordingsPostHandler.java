@@ -49,6 +49,10 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.inject.Provider;
 
+import com.google.gson.Gson;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.openjdk.jmc.common.unit.QuantityConversionException;
 import org.openjdk.jmc.flightrecorder.configuration.recording.RecordingOptionsBuilder;
 import org.openjdk.jmc.rjmx.services.jfr.IRecordingDescriptor;
@@ -66,15 +70,13 @@ import io.cryostat.net.web.http.HttpMimeType;
 import io.cryostat.net.web.http.api.ApiVersion;
 import io.cryostat.recordings.RecordingOptionsBuilderFactory;
 import io.cryostat.recordings.RecordingTargetHelper;
-
-import com.google.gson.Gson;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
 import io.vertx.core.MultiMap;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.impl.HttpStatusException;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 
 public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHandler {
 
@@ -133,31 +135,33 @@ public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHan
 
     @Override
     public void handleAuthenticated(RoutingContext ctx) throws Exception {
-        MultiMap attrs = ctx.request().formAttributes();
-        String recordingName = attrs.get("recordingName");
-        if (StringUtils.isBlank(recordingName)) {
-            throw new HttpStatusException(400, "\"recordingName\" form parameter must be provided");
-        }
-        String eventSpecifier = attrs.get("events");
-        if (StringUtils.isBlank(eventSpecifier)) {
-            throw new HttpStatusException(400, "\"events\" form parameter must be provided");
-        }
+        Span span = tracer.spanBuilder("TargetRecordingsPost Handler").startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            MultiMap attrs = ctx.request().formAttributes();
+            String recordingName = attrs.get("recordingName");
+            if (StringUtils.isBlank(recordingName)) {
+                throw new HttpStatusException(400, "\"recordingName\" form parameter must be provided");
+            }
+            String eventSpecifier = attrs.get("events");
+            if (StringUtils.isBlank(eventSpecifier)) {
+                throw new HttpStatusException(400, "\"events\" form parameter must be provided");
+            }
 
-        try {
-            ConnectionDescriptor connectionDescriptor = getConnectionDescriptorFromContext(ctx);
-            HyperlinkedSerializableRecordingDescriptor linkedDescriptor =
+            try {
+                ConnectionDescriptor connectionDescriptor = getConnectionDescriptorFromContext(ctx);
+                HyperlinkedSerializableRecordingDescriptor linkedDescriptor =
                     targetConnectionManager.executeConnectedTask(
                             connectionDescriptor,
                             connection -> {
                                 RecordingOptionsBuilder builder =
-                                        recordingOptionsBuilderFactory
-                                                .create(connection.getService())
-                                                .name(recordingName);
+                                    recordingOptionsBuilderFactory
+                                    .create(connection.getService())
+                                    .name(recordingName);
                                 if (attrs.contains("duration")) {
                                     builder =
-                                            builder.duration(
-                                                    TimeUnit.SECONDS.toMillis(
-                                                            Long.parseLong(attrs.get("duration"))));
+                                        builder.duration(
+                                                TimeUnit.SECONDS.toMillis(
+                                                    Long.parseLong(attrs.get("duration"))));
                                 }
                                 if (attrs.contains("toDisk")) {
                                     Pattern bool = Pattern.compile("true|false");
@@ -173,38 +177,41 @@ public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHan
                                     builder = builder.maxSize(Long.parseLong(attrs.get("maxSize")));
                                 }
                                 Pair<String, TemplateType> template =
-                                        RecordingTargetHelper.parseEventSpecifierToTemplate(
-                                                eventSpecifier);
+                                    RecordingTargetHelper.parseEventSpecifierToTemplate(
+                                            eventSpecifier);
                                 IRecordingDescriptor descriptor =
-                                        recordingTargetHelper.startRecording(
-                                                connectionDescriptor,
-                                                builder.build(),
-                                                template.getLeft(),
-                                                template.getRight());
+                                    recordingTargetHelper.startRecording(
+                                            connectionDescriptor,
+                                            builder.build(),
+                                            template.getLeft(),
+                                            template.getRight());
                                 try {
                                     WebServer webServer = webServerProvider.get();
                                     return new HyperlinkedSerializableRecordingDescriptor(
                                             descriptor,
                                             webServer.getDownloadURL(
-                                                    connection, descriptor.getName()),
+                                                connection, descriptor.getName()),
                                             webServer.getReportURL(
-                                                    connection, descriptor.getName()));
+                                                connection, descriptor.getName()));
                                 } catch (QuantityConversionException
                                         | URISyntaxException
                                         | IOException e) {
                                     throw new HttpStatusException(500, e);
-                                }
+                                        }
                             });
 
-            ctx.response().setStatusCode(201);
-            ctx.response().putHeader(HttpHeaders.LOCATION, "/" + recordingName);
-            ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime());
-            ctx.response().end(gson.toJson(linkedDescriptor));
-        } catch (NumberFormatException nfe) {
-            throw new HttpStatusException(
-                    400, String.format("Invalid argument: %s", nfe.getMessage()), nfe);
-        } catch (IllegalArgumentException iae) {
-            throw new HttpStatusException(400, iae.getMessage(), iae);
+                ctx.response().setStatusCode(201);
+                ctx.response().putHeader(HttpHeaders.LOCATION, "/" + recordingName);
+                ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime());
+                ctx.response().end(gson.toJson(linkedDescriptor));
+            } catch (NumberFormatException nfe) {
+                throw new HttpStatusException(
+                        400, String.format("Invalid argument: %s", nfe.getMessage()), nfe);
+            } catch (IllegalArgumentException iae) {
+                throw new HttpStatusException(400, iae.getMessage(), iae);
+            }
+        } finally {
+            span.end();
         }
     }
 
