@@ -42,8 +42,6 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.openjdk.jmc.common.unit.IConstrainedMap;
 import org.openjdk.jmc.flightrecorder.configuration.events.EventOptionID;
 import org.openjdk.jmc.flightrecorder.configuration.recording.RecordingOptionsBuilder;
@@ -57,10 +55,13 @@ import io.cryostat.messaging.notifications.NotificationFactory;
 import io.cryostat.net.ConnectionDescriptor;
 import io.cryostat.net.TargetConnectionManager;
 import io.cryostat.net.web.http.HttpMimeType;
+
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class RecordingTargetHelper {
 
@@ -99,7 +100,8 @@ public class RecordingTargetHelper {
             return targetConnectionManager.executeConnectedTask(
                     connectionDescriptor,
                     connection -> {
-                        Span connectionSpan = tracer.spanBuilder("RecordingTargetHelper connection").startSpan();
+                        Span connectionSpan =
+                                tracer.spanBuilder("RecordingTargetHelper connection").startSpan();
                         try (Scope connectionScope = connectionSpan.makeCurrent()) {
                             Optional<IRecordingDescriptor> previous =
                                     getDescriptorByName(connection, recordingName);
@@ -118,7 +120,10 @@ public class RecordingTargetHelper {
                                             .getService()
                                             .start(
                                                     recordingOptions,
-                                                    enableEvents(connection, templateName, templateType));
+                                                    enableEvents(
+                                                            connection,
+                                                            templateName,
+                                                            templateType));
                             notificationFactory
                                     .createBuilder()
                                     .metaCategory(NOTIFICATION_CATEGORY)

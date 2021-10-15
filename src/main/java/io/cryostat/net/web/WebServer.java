@@ -53,14 +53,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.google.gson.Gson;
-
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.impl.EnglishReasonPhraseCatalog;
 import org.openjdk.jmc.rjmx.services.jfr.FlightRecorderException;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.cryostat.MainModule;
 import io.cryostat.core.log.Logger;
 import io.cryostat.core.net.JFRConnection;
@@ -75,6 +69,9 @@ import io.cryostat.net.web.http.api.ApiResponse;
 import io.cryostat.net.web.http.api.ApiVersion;
 import io.cryostat.net.web.http.api.v2.ApiException;
 import io.cryostat.util.HttpStatusCodeIdentifier;
+
+import com.google.gson.Gson;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
@@ -89,6 +86,9 @@ import jdk.jfr.Category;
 import jdk.jfr.Event;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.impl.EnglishReasonPhraseCatalog;
 
 public class WebServer {
 
@@ -142,7 +142,8 @@ public class WebServer {
                                 exception.getPayload() != null
                                         ? exception.getPayload()
                                         : exception.getMessage();
-                        if (!HttpStatusCodeIdentifier.isServerErrorCode(exception.getStatusCode())) {
+                        if (!HttpStatusCodeIdentifier.isServerErrorCode(
+                                exception.getStatusCode())) {
                             logger.warn(
                                     "HTTP {}: {}\n{}",
                                     exception.getStatusCode(),
@@ -157,7 +158,8 @@ public class WebServer {
                         }
 
                         if (exception.getStatusCode() == 401) {
-                            ctx.response().putHeader(AUTH_SCHEME_HEADER, auth.getScheme().toString());
+                            ctx.response()
+                                    .putHeader(AUTH_SCHEME_HEADER, auth.getScheme().toString());
                         }
 
                         ctx.response().setStatusCode(exception.getStatusCode());
@@ -180,7 +182,8 @@ public class WebServer {
                             // kept for V1 API handler compatibility
                             if (ExceptionUtils.hasCause(exception, HttpStatusException.class)) {
                                 payload +=
-                                        " caused by " + ExceptionUtils.getRootCauseMessage(exception);
+                                        " caused by "
+                                                + ExceptionUtils.getRootCauseMessage(exception);
                             }
 
                             String accept = ctx.request().getHeader(HttpHeaders.ACCEPT);
@@ -189,13 +192,15 @@ public class WebServer {
                                     && accept.indexOf(HttpMimeType.JSON.mime())
                                             < accept.indexOf(HttpMimeType.PLAINTEXT.mime())) {
                                 ctx.response()
-                                        .putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime())
+                                        .putHeader(
+                                                HttpHeaders.CONTENT_TYPE, HttpMimeType.JSON.mime())
                                         .end(gson.toJson(Map.of("message", payload)));
                                 return;
                             }
 
                             ctx.response()
-                                    .putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.PLAINTEXT.mime())
+                                    .putHeader(
+                                            HttpHeaders.CONTENT_TYPE, HttpMimeType.PLAINTEXT.mime())
                                     .end(payload);
                         }
                     } finally {
@@ -257,7 +262,7 @@ public class WebServer {
                                         }
                                         span.end();
                                     });
-                        router.handle(req);
+                    router.handle(req);
                 });
     }
 
