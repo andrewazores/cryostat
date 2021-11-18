@@ -48,18 +48,19 @@ import java.util.regex.Pattern;
 
 import javax.security.sasl.SaslException;
 
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.openjdk.jmc.rjmx.ConnectionException;
 
 import io.cryostat.core.net.Credentials;
 import io.cryostat.net.AuthManager;
 import io.cryostat.net.ConnectionDescriptor;
 import io.cryostat.net.OpenShiftAuthManager.PermissionDeniedException;
+
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.impl.HttpStatusException;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 
 public abstract class AbstractAuthenticatedRequestHandler implements RequestHandler {
 

@@ -37,6 +37,7 @@
  */
 package io.cryostat.net.web.http.generic;
 
+import java.util.Objects;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -92,7 +93,15 @@ class OtelTracingHandler implements RequestHandler {
 
     @Override
     public void handle(RoutingContext ctx) {
-        Span span = tracer.spanBuilder(ctx.request().uri()).setNoParent().startSpan();
+        Span span =
+                tracer.spanBuilder(
+                                String.format(
+                                        "%s %s", ctx.request().rawMethod(), ctx.request().uri()))
+                        .setNoParent()
+                        .startSpan()
+                        .setAttribute("method", ctx.request().rawMethod())
+                        .setAttribute("path", ctx.request().absoluteURI())
+                        .setAttribute("addr", Objects.toString(ctx.request().remoteAddress()));
         ctx.put("span", span);
         ctx.response().endHandler(ar -> span.end());
         ctx.response().closeHandler(ar -> span.end());

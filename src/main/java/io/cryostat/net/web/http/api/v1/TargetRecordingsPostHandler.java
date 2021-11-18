@@ -49,10 +49,6 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.inject.Provider;
 
-import com.google.gson.Gson;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.openjdk.jmc.common.unit.QuantityConversionException;
 import org.openjdk.jmc.flightrecorder.configuration.recording.RecordingOptionsBuilder;
 import org.openjdk.jmc.rjmx.services.jfr.IRecordingDescriptor;
@@ -70,6 +66,8 @@ import io.cryostat.net.web.http.HttpMimeType;
 import io.cryostat.net.web.http.api.ApiVersion;
 import io.cryostat.recordings.RecordingOptionsBuilderFactory;
 import io.cryostat.recordings.RecordingTargetHelper;
+
+import com.google.gson.Gson;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.vertx.core.MultiMap;
@@ -77,6 +75,8 @@ import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.impl.HttpStatusException;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHandler {
 
@@ -138,8 +138,7 @@ public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHan
         MultiMap attrs = ctx.request().formAttributes();
         String recordingName = attrs.get("recordingName");
         if (StringUtils.isBlank(recordingName)) {
-            throw new HttpStatusException(
-                    400, "\"recordingName\" form parameter must be provided");
+            throw new HttpStatusException(400, "\"recordingName\" form parameter must be provided");
         }
         String eventSpecifier = attrs.get("events");
         if (StringUtils.isBlank(eventSpecifier)) {
@@ -148,65 +147,59 @@ public class TargetRecordingsPostHandler extends AbstractAuthenticatedRequestHan
 
         try {
             ConnectionDescriptor connectionDescriptor = getConnectionDescriptorFromContext(ctx);
-            Context context = Context.current();
+            Context context = Context.current().with(ctx.get("span"));
             HyperlinkedSerializableRecordingDescriptor linkedDescriptor =
-                targetConnectionManager.executeConnectedTask(
-                        connectionDescriptor,
-                        connection -> {
-                            RecordingOptionsBuilder builder =
-                                recordingOptionsBuilderFactory
-                                .create(connection.getService())
-                                .name(recordingName);
-                            if (attrs.contains("duration")) {
-                                builder =
-                                    builder.duration(
-                                            TimeUnit.SECONDS.toMillis(
-                                                Long.parseLong(
-                                                    attrs.get("duration"))));
-                            }
-                            if (attrs.contains("toDisk")) {
-                                Pattern bool = Pattern.compile("true|false");
-                                Matcher m = bool.matcher(attrs.get("toDisk"));
-                                if (!m.matches())
-                                    throw new HttpStatusException(400, "Invalid options");
-                                builder =
-                                    builder.toDisk(
-                                            Boolean.valueOf(attrs.get("toDisk")));
-                            }
-                            if (attrs.contains("maxAge")) {
-                                builder =
-                                    builder.maxAge(Long.parseLong(attrs.get("maxAge")));
-                            }
-                            if (attrs.contains("maxSize")) {
-                                builder =
-                                    builder.maxSize(
-                                            Long.parseLong(attrs.get("maxSize")));
-                            }
-                            Pair<String, TemplateType> template =
-                                RecordingTargetHelper.parseEventSpecifierToTemplate(
-                                        eventSpecifier);
-                            try (Scope scope = context.makeCurrent()) {
-                                IRecordingDescriptor descriptor =
-                                    recordingTargetHelper.startRecording(
-                                            connectionDescriptor,
-                                            builder.build(),
-                                            template.getLeft(),
-                                            template.getRight());
-                                try {
-                                    WebServer webServer = webServerProvider.get();
-                                    return new HyperlinkedSerializableRecordingDescriptor(
-                                            descriptor,
-                                            webServer.getDownloadURL(
-                                                connection, descriptor.getName()),
-                                            webServer.getReportURL(
-                                                connection, descriptor.getName()));
-                                } catch (QuantityConversionException
-                                        | URISyntaxException
-                                        | IOException e) {
-                                    throw new HttpStatusException(500, e);
-                                        }
-                            }
-                        });
+                    targetConnectionManager.executeConnectedTask(
+                            connectionDescriptor,
+                            connection -> {
+                                RecordingOptionsBuilder builder =
+                                        recordingOptionsBuilderFactory
+                                                .create(connection.getService())
+                                                .name(recordingName);
+                                if (attrs.contains("duration")) {
+                                    builder =
+                                            builder.duration(
+                                                    TimeUnit.SECONDS.toMillis(
+                                                            Long.parseLong(attrs.get("duration"))));
+                                }
+                                if (attrs.contains("toDisk")) {
+                                    Pattern bool = Pattern.compile("true|false");
+                                    Matcher m = bool.matcher(attrs.get("toDisk"));
+                                    if (!m.matches())
+                                        throw new HttpStatusException(400, "Invalid options");
+                                    builder = builder.toDisk(Boolean.valueOf(attrs.get("toDisk")));
+                                }
+                                if (attrs.contains("maxAge")) {
+                                    builder = builder.maxAge(Long.parseLong(attrs.get("maxAge")));
+                                }
+                                if (attrs.contains("maxSize")) {
+                                    builder = builder.maxSize(Long.parseLong(attrs.get("maxSize")));
+                                }
+                                Pair<String, TemplateType> template =
+                                        RecordingTargetHelper.parseEventSpecifierToTemplate(
+                                                eventSpecifier);
+                                try (Scope scope = context.makeCurrent()) {
+                                    IRecordingDescriptor descriptor =
+                                            recordingTargetHelper.startRecording(
+                                                    connectionDescriptor,
+                                                    builder.build(),
+                                                    template.getLeft(),
+                                                    template.getRight());
+                                    try {
+                                        WebServer webServer = webServerProvider.get();
+                                        return new HyperlinkedSerializableRecordingDescriptor(
+                                                descriptor,
+                                                webServer.getDownloadURL(
+                                                        connection, descriptor.getName()),
+                                                webServer.getReportURL(
+                                                        connection, descriptor.getName()));
+                                    } catch (QuantityConversionException
+                                            | URISyntaxException
+                                            | IOException e) {
+                                        throw new HttpStatusException(500, e);
+                                    }
+                                }
+                            });
 
             ctx.response().setStatusCode(201);
             ctx.response().putHeader(HttpHeaders.LOCATION, "/" + recordingName);
