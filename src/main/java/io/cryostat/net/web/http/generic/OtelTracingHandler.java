@@ -37,36 +37,65 @@
  */
 package io.cryostat.net.web.http.generic;
 
+import java.util.Set;
+
+import javax.inject.Inject;
+
+import io.cryostat.net.security.ResourceAction;
 import io.cryostat.net.web.http.RequestHandler;
+import io.cryostat.net.web.http.api.ApiVersion;
 
-import dagger.Binds;
-import dagger.Module;
-import dagger.multibindings.IntoSet;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.ext.web.RoutingContext;
 
-@Module
-public abstract class HttpGenericModule {
+class OtelTracingHandler implements RequestHandler {
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindOtelTracingHandler(OtelTracingHandler handler);
+    protected final Tracer tracer;
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindCorsEnablingHandler(CorsEnablingHandler handler);
+    @Inject
+    OtelTracingHandler(OpenTelemetry otel) {
+        this.tracer = otel.getTracer(getClass().getCanonicalName());
+    }
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindCorsOptionsHandler(CorsOptionsHandler handler);
+    @Override
+    public ApiVersion apiVersion() {
+        return ApiVersion.GENERIC;
+    }
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindHealthGetHandler(HealthGetHandler handler);
+    @Override
+    public int getPriority() {
+        return -1;
+    }
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindStaticAssetsGetHandler(StaticAssetsGetHandler handler);
+    @Override
+    public HttpMethod httpMethod() {
+        return HttpMethod.OTHER; // unused for ALL_PATHS handlers
+    }
 
-    @Binds
-    @IntoSet
-    abstract RequestHandler bindWebClientAssetsGetHandler(WebClientAssetsGetHandler handler);
+    @Override
+    public Set<ResourceAction> resourceActions() {
+        return ResourceAction.NONE;
+    }
+
+    @Override
+    public String path() {
+        return ALL_PATHS;
+    }
+
+    @Override
+    public boolean isOrdered() {
+        return false;
+    }
+
+    @Override
+    public void handle(RoutingContext ctx) {
+        Span span = tracer.spanBuilder(ctx.request().uri()).setNoParent().startSpan();
+        ctx.put("span", span);
+        ctx.response().endHandler(ar -> span.end());
+        ctx.response().closeHandler(ar -> span.end());
+        ctx.next();
+    }
 }
