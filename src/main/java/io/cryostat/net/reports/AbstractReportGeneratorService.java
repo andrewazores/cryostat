@@ -37,6 +37,7 @@
  */
 package io.cryostat.net.reports;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -53,8 +54,6 @@ import io.cryostat.core.net.JFRConnection;
 import io.cryostat.core.sys.FileSystem;
 import io.cryostat.net.ConnectionDescriptor;
 import io.cryostat.net.TargetConnectionManager;
-import io.cryostat.net.reports.SubprocessReportGenerator.ExitStatus;
-import io.cryostat.net.reports.SubprocessReportGenerator.ReportGenerationException;
 
 abstract class AbstractReportGeneratorService implements ReportGeneratorService {
 
@@ -111,6 +110,6 @@ abstract class AbstractReportGeneratorService implements ReportGeneratorService 
                 return path;
             }
         }
-        throw new ReportGenerationException(ExitStatus.NO_SUCH_RECORDING);
+        throw new FileNotFoundException(recordingName);
     }
 }
