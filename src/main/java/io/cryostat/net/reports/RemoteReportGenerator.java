@@ -105,7 +105,9 @@ class RemoteReportGenerator extends AbstractReportGeneratorService {
                                                     return;
                                                 }
                                                 f.complete(destination);
-                                                logger.info("Report response for {} success", recording);
+                                                logger.info(
+                                                        "Report response for {} success",
+                                                        recording);
                                             });
                         });
         return f;
