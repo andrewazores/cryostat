@@ -55,6 +55,7 @@ import io.cryostat.util.JavaProcess;
 
 import dagger.Module;
 import dagger.Provides;
+import io.opentelemetry.api.OpenTelemetry;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.client.WebClient;
 
@@ -109,6 +110,7 @@ public abstract class ReportsModule {
             Vertx vertx,
             WebClient http,
             Environment env,
+            OpenTelemetry otel,
             Logger logger) {
         // TODO extract this so it's reusable and not duplicated
         Provider<Path> tempFileProvider =
@@ -121,7 +123,7 @@ public abstract class ReportsModule {
                     }
                 };
         return new RemoteReportGenerator(
-                targetConnectionManager, fs, tempFileProvider, vertx, http, env, logger);
+                targetConnectionManager, fs, tempFileProvider, vertx, http, env, otel, logger);
     }
 
     @Provides
