@@ -5,15 +5,12 @@ set -e
 
 function runCryostat() {
     local DIR="$(dirname "$(readlink -f "$0")")"
-    if [ -z "$CRYOSTAT_REPORT_GENERATOR" ]; then
-        CRYOSTAT_REPORT_GENERATOR=subprocess
-    fi
     GRAFANA_DATASOURCE_URL="http://0.0.0.0:8080" \
         GRAFANA_DASHBOARD_URL="http://0.0.0.0:3000" \
         CRYOSTAT_RJMX_USER=smoketest \
         CRYOSTAT_RJMX_PASS=smoketest \
         CRYOSTAT_ALLOW_UNTRUSTED_SSL=true \
-        CRYOSTAT_REPORT_GENERATOR=$CRYOSTAT_REPORT_GENERATOR \
+        CRYOSTAT_REPORT_GENERATOR="http://0.0.0.0:10001" \
         exec "$DIR/run.sh"
 }
 
