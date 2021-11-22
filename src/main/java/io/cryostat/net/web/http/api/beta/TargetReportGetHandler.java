@@ -136,11 +136,13 @@ class TargetReportGetHandler extends AbstractJwtConsumingHandler {
     }
 
     private boolean targetRecordingNotFound(Exception rootCause) {
-        return rootCause instanceof SubprocessReportGenerator.ReportGenerationException
-                        && (((SubprocessReportGenerator.ReportGenerationException) rootCause)
+        return rootCause instanceof SubprocessReportGenerator.SubprocessReportGenerationException
+                        && (((SubprocessReportGenerator.SubprocessReportGenerationException)
+                                                rootCause)
                                         .getStatus()
                                 == SubprocessReportGenerator.ExitStatus.TARGET_CONNECTION_FAILURE)
-                || (((SubprocessReportGenerator.ReportGenerationException) rootCause).getStatus()
+                || (((SubprocessReportGenerator.SubprocessReportGenerationException) rootCause)
+                                .getStatus()
                         == SubprocessReportGenerator.ExitStatus.NO_SUCH_RECORDING);
     }
 }
