@@ -45,12 +45,14 @@ import java.nio.file.Path;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+import io.cryostat.MainModule;
 import io.cryostat.core.log.Logger;
 import io.cryostat.net.AuthManager;
 import io.cryostat.net.reports.ReportService;
 import io.cryostat.net.security.ResourceAction;
 import io.cryostat.recordings.RecordingNotFoundException;
 
+import io.opentelemetry.api.OpenTelemetry;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerRequest;
@@ -74,10 +76,11 @@ class ReportGetHandlerTest {
     @Mock AuthManager authManager;
     @Mock ReportService reportService;
     @Mock Logger logger;
+    OpenTelemetry otel = MainModule.nonDIProvideOpenTelemetry();
 
     @BeforeEach
     void setup() {
-        this.handler = new ReportGetHandler(authManager, reportService, logger);
+        this.handler = new ReportGetHandler(authManager, reportService, otel, logger);
     }
 
     @Test

@@ -43,6 +43,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.inject.Provider;
 
+import io.cryostat.configuration.Variables;
 import io.cryostat.core.log.Logger;
 import io.cryostat.core.sys.Environment;
 import io.cryostat.core.sys.FileSystem;
@@ -90,21 +91,33 @@ class RemoteReportGenerator extends AbstractReportGeneratorService {
 
     @Override
     public CompletableFuture<Path> exec(Path recording, Path destination) {
+        if (!env.hasEnv(Variables.REPORT_GENERATOR_ENV)) {
+            throw new IllegalStateException();
+        }
+        String reportGenerator = env.getEnv(Variables.REPORT_GENERATOR_ENV);
+
         Span span =
-                tracer.spanBuilder(recording.getFileName().toString())
+                tracer.spanBuilder(
+                                String.format(
+                                        "%s: %s",
+                                        getClass().getCanonicalName(),
+                                        recording.getFileName().toString()))
                         .setSpanKind(SpanKind.CLIENT)
                         .startSpan();
         Scope scope = span.makeCurrent();
-        var f = new CompletableFuture<Path>().whenComplete((p, t) -> {
-            scope.close();
-            span.end();
-        });
-        String reportGenerator = env.getEnv("CRYOSTAT_REPORT_GENERATOR");
+        var f = new CompletableFuture<Path>();
+        f.whenComplete(
+                (p, t) -> {
+                    if (t != null) {
+                        span.recordException(t);
+                    }
+                    scope.close();
+                    span.end();
+                });
 
         span.setAttribute(SemanticAttributes.HTTP_METHOD, "POST");
         span.setAttribute(SemanticAttributes.HTTP_URL, reportGenerator);
 
-        logger.info("POSTing {} to {}", recording, reportGenerator);
         var form =
                 MultipartForm.create()
                         .binaryFileUpload(
@@ -124,10 +137,7 @@ class RemoteReportGenerator extends AbstractReportGeneratorService {
                         req,
                         new TextMapSetter<>() {
                             @Override
-                            public void set(
-                                    HttpRequest<Buffer> carrier, String key, String value) {
-                                System.out.println(
-                                        String.format("Appending header %s=%s", key, value));
+                            public void set(HttpRequest<Buffer> carrier, String key, String value) {
                                 carrier.putHeader(key, value);
                             }
                         });
@@ -149,8 +159,6 @@ class RemoteReportGenerator extends AbstractReportGeneratorService {
                                             return;
                                         }
                                         f.complete(destination);
-                                        logger.info(
-                                                "Report response for {} success", recording);
                                     });
                 });
         return f;

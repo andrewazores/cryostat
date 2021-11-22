@@ -131,6 +131,7 @@ public class WebServer {
                     } else {
                         exception = new HttpStatusException(500, ctx.failure());
                     }
+                    span.recordException(exception);
 
                     String payload =
                             exception.getPayload() != null

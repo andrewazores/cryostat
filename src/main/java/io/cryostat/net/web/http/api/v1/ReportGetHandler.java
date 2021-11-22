@@ -54,6 +54,10 @@ import io.cryostat.net.web.http.HttpMimeType;
 import io.cryostat.net.web.http.api.ApiVersion;
 import io.cryostat.recordings.RecordingNotFoundException;
 
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
@@ -63,11 +67,14 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 class ReportGetHandler extends AbstractAuthenticatedRequestHandler {
 
     private final ReportService reportService;
+    private final Tracer tracer;
 
     @Inject
-    ReportGetHandler(AuthManager auth, ReportService reportService, Logger logger) {
+    ReportGetHandler(
+            AuthManager auth, ReportService reportService, OpenTelemetry otel, Logger logger) {
         super(auth);
         this.reportService = reportService;
+        this.tracer = otel.getTracer(getClass().getCanonicalName());
     }
 
     @Override
@@ -106,6 +113,10 @@ class ReportGetHandler extends AbstractAuthenticatedRequestHandler {
     @Override
     public void handleAuthenticated(RoutingContext ctx) throws Exception {
         String recordingName = ctx.pathParam("recordingName");
+        Span span =
+                tracer.spanBuilder("ReportGetHandler")
+                        .setParent(Context.current().with(ctx.get("span")))
+                        .startSpan();
         try {
             Path report = reportService.get(recordingName).get();
             ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, HttpMimeType.HTML.mime());
@@ -117,6 +128,8 @@ class ReportGetHandler extends AbstractAuthenticatedRequestHandler {
                 throw new HttpStatusException(404, ee);
             }
             throw ee;
+        } finally {
+            span.end();
         }
     }
 }
