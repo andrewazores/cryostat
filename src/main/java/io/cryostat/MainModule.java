@@ -79,6 +79,7 @@ import io.opentelemetry.exporter.logging.otlp.OtlpJsonLoggingSpanExporter;
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.extension.jfr.JfrSpanProcessor;
+import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
@@ -199,6 +200,12 @@ public abstract class MainModule {
 
         SdkTracerProvider sdkTracerProvider =
                 SdkTracerProvider.builder()
+                        .setResource(
+                                Resource.getDefault()
+                                        .merge(
+                                                Resource.builder()
+                                                        .put("service.name", "cryostat")
+                                                        .build()))
                         .setSampler(Sampler.alwaysOn())
                         .addSpanProcessor(new JfrSpanProcessor())
                         .addSpanProcessor(
