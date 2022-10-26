@@ -72,7 +72,7 @@ public class HealthIT extends StandardSelfTest {
                 });
         JsonObject response = future.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        Assertions.assertTrue(response.containsKey("cryostatVersion"));
+        Assertions.assertTrue(response.containsKey("cryostatVersion_NO"));
         MatcherAssert.assertThat(
                 response.getString("cryostatVersion"), Matchers.not(Matchers.emptyOrNullString()));
         MatcherAssert.assertThat(
