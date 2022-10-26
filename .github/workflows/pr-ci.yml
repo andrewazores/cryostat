@@ -22,7 +22,7 @@ jobs:
   build-and-test:
     uses: ./.github/workflows/ci-jobs.yml
     with:
-      checkout-repo: ${{ github.event.pull_request.head.user.login }}/${{ github.repository }}
+      checkout-repo: ${{ github.repository }}
       checkout-ref: ${{ github.event.pull_request.head.ref }}
     if: contains(github.event.pull_request.labels.*.name, 'safe-to-test')
 
