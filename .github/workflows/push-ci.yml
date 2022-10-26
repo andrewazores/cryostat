@@ -14,6 +14,9 @@ on:
 jobs:
   build-and-test:
     uses: ./.github/workflows/ci-jobs.yml
+    with:
+      checkout-repo: ${{ github.repository_owner }}/${{ github.repository }}
+      checkout-ref: $GITHUB_REF
     if: github.repository_owner == 'cryostatio'
   push-to-quay:
     runs-on: ubuntu-latest
