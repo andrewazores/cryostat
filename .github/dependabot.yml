@@ -1,22 +1,18 @@
 version: 2
 updates:
-  - package-ecosystem: "maven"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    reviewers:
-      - "cryostatio/reviewers"
-    labels:
-      - "dependencies"
-      - "chore"
-      - "safe-to-test"
+  # - package-ecosystem: "maven"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "daily"
+  #   labels:
+  #     - "dependencies"
+  #     - "chore"
+  #     - "safe-to-test"
 
   - package-ecosystem: "docker"
     directory: "/src/container"
     schedule:
-      interval: "weekly"
-    reviewers:
-      - "cryostatio/reviewers"
+      interval: "daily"
     labels:
       - "dependencies"
       - "chore"
