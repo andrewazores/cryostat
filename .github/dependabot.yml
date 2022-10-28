@@ -4,8 +4,6 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    reviewers:
-      - "cryostatio/reviewers"
     labels:
       - "dependencies"
       - "chore"
@@ -14,9 +12,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/src/container"
     schedule:
-      interval: "weekly"
-    reviewers:
-      - "cryostatio/reviewers"
+      interval: "daily"
     labels:
       - "dependencies"
       - "chore"
