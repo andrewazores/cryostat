@@ -18,8 +18,6 @@
 
   <imageBuilder>/usr/bin/podman</imageBuilder>
 
-  <ubiImage>registry.access.redhat.com/ubi8/openjdk-17-runtime</ubiImage>
-  <ubiImageTag>:latest</ubiImageTag>
   <baseImage>localhost/cryostat-base</baseImage>
   <baseImageTag>latest</baseImageTag>
   <baseImageTarball>base.tar.gz</baseImageTarball>
