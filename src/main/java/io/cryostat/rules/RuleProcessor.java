@@ -147,16 +147,10 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
 
             private void applyRuleToTargets(Event<RuleEvent, Rule> event) {
                 executor.submit(
-                        () -> {
-                            var svcs = platformClient.listUniqueReachableServices();
-                            svcs.stream()
-                                    .filter(
-                                            serviceRef ->
-                                                    registry.applies(
-                                                            event.getPayload(), serviceRef))
-                                    .forEach(
-                                            serviceRef -> activate(event.getPayload(), serviceRef));
-                        });
+                        () ->
+                                platformClient
+                                        .listUniqueReachableServices()
+                                        .forEach(RuleProcessor.this::activateAllRulesFor));
             }
         };
     }
@@ -172,13 +166,7 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
                                 () -> {
                                     credentialsManager
                                             .resolveMatchingTargets(event.getPayload())
-                                            .forEach(
-                                                    sr -> {
-                                                        registry.getRules(sr).stream()
-                                                                .filter(Rule::isEnabled)
-                                                                .forEach(
-                                                                        rule -> activate(rule, sr));
-                                                    });
+                                            .forEach(RuleProcessor.this::activateAllRulesFor);
                                 });
                         break;
                     case REMOVED:
@@ -194,18 +182,7 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
     public synchronized void accept(TargetDiscoveryEvent tde) {
         switch (tde.getEventKind()) {
             case FOUND:
-                if (!platformClient.contains(tde.getServiceRef())) {
-                    executor.submit(
-                            () -> {
-                                registry.getRules(tde.getServiceRef())
-                                        .forEach(
-                                                rule -> {
-                                                    if (rule.isEnabled()) {
-                                                        activate(rule, tde.getServiceRef());
-                                                    }
-                                                });
-                            });
-                }
+                activateAllRulesFor(tde.getServiceRef());
                 break;
             case LOST:
                 deactivate(null, tde.getServiceRef());
@@ -215,6 +192,15 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
             default:
                 throw new UnsupportedOperationException(tde.getEventKind().toString());
         }
+    }
+
+    private void activateAllRulesFor(ServiceRef serviceRef) {
+        executor.submit(
+                () -> {
+                    registry.getRules(serviceRef).stream()
+                            .filter(Rule::isEnabled)
+                            .forEach(rule -> activate(rule, serviceRef));
+                });
     }
 
     private void activate(Rule rule, ServiceRef serviceRef) {
