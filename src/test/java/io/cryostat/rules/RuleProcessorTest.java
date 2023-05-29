@@ -21,6 +21,7 @@ import static org.mockito.Mockito.*;
 import java.net.URI;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 
 import org.openjdk.jmc.common.unit.IConstrainedMap;
@@ -28,6 +29,7 @@ import org.openjdk.jmc.flightrecorder.configuration.recording.RecordingOptionsBu
 import org.openjdk.jmc.rjmx.services.jfr.IFlightRecorderService;
 import org.openjdk.jmc.rjmx.services.jfr.IRecordingDescriptor;
 
+import io.cryostat.DirectExecutorService;
 import io.cryostat.MockVertx;
 import io.cryostat.configuration.CredentialsManager;
 import io.cryostat.configuration.CredentialsManager.CredentialsEvent;
@@ -72,6 +74,7 @@ class RuleProcessorTest {
     RuleProcessor processor;
     Vertx vertx;
     @Mock PlatformClient platformClient;
+    ExecutorService executor = new DirectExecutorService();
     @Mock RuleRegistry registry;
     @Mock CredentialsManager credentialsManager;
     @Mock RecordingOptionsBuilderFactory recordingOptionsBuilderFactory;
@@ -92,6 +95,7 @@ class RuleProcessorTest {
                 new RuleProcessor(
                         vertx,
                         platformClient,
+                        executor,
                         registry,
                         credentialsManager,
                         recordingOptionsBuilderFactory,
@@ -250,9 +254,7 @@ class RuleProcessorTest {
 
     @Test
     void testSuccessfulArchiverRuleActivationWithCredentials() throws Exception {
-        Mockito.when(
-                        targetConnectionManager.executeConnectedTaskAsync(
-                                Mockito.any(), Mockito.any()))
+        Mockito.when(targetConnectionManager.executeConnectedTask(Mockito.any(), Mockito.any()))
                 .thenAnswer(
                         arg0 ->
                                 CompletableFuture.completedFuture(

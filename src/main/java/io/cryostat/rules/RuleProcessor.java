@@ -20,12 +20,13 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 
 import javax.script.ScriptException;
@@ -60,6 +61,7 @@ import org.apache.commons.lang3.tuple.Pair;
 public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDiscoveryEvent> {
 
     private final PlatformClient platformClient;
+    private final ExecutorService executor;
     private final RuleRegistry registry;
     private final CredentialsManager credentialsManager;
     private final RecordingOptionsBuilderFactory recordingOptionsBuilderFactory;
@@ -75,6 +77,7 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
     RuleProcessor(
             Vertx vertx,
             PlatformClient platformClient,
+            ExecutorService executor,
             RuleRegistry registry,
             CredentialsManager credentialsManager,
             RecordingOptionsBuilderFactory recordingOptionsBuilderFactory,
@@ -86,6 +89,7 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
             Logger logger) {
         this.vertx = vertx;
         this.platformClient = platformClient;
+        this.executor = executor;
         this.registry = registry;
         this.credentialsManager = credentialsManager;
         this.recordingOptionsBuilderFactory = recordingOptionsBuilderFactory;
@@ -120,24 +124,9 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
             public void onEvent(Event<RuleEvent, Rule> event) {
                 switch (event.getEventType()) {
                     case ADDED:
-                        vertx.<List<ServiceRef>>executeBlocking(
-                                promise ->
-                                        promise.complete(
-                                                platformClient.listUniqueReachableServices()),
-                                false,
-                                result ->
-                                        result.result().stream()
-                                                .filter(
-                                                        serviceRef ->
-                                                                event.getPayload().isEnabled()
-                                                                        && registry.applies(
-                                                                                event.getPayload(),
-                                                                                serviceRef))
-                                                .forEach(
-                                                        serviceRef ->
-                                                                activate(
-                                                                        event.getPayload(),
-                                                                        serviceRef)));
+                        if (event.getPayload().isEnabled()) {
+                            applyRuleToTargets(event);
+                        }
                         break;
                     case REMOVED:
                         deactivate(event.getPayload(), null);
@@ -146,28 +135,26 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
                         if (!event.getPayload().isEnabled()) {
                             deactivate(event.getPayload(), null);
                         } else {
-                            vertx.<List<ServiceRef>>executeBlocking(
-                                    promise ->
-                                            promise.complete(
-                                                    platformClient.listUniqueReachableServices()),
-                                    false,
-                                    result ->
-                                            result.result().stream()
-                                                    .filter(
-                                                            serviceRef ->
-                                                                    registry.applies(
-                                                                            event.getPayload(),
-                                                                            serviceRef))
-                                                    .forEach(
-                                                            serviceRef ->
-                                                                    activate(
-                                                                            event.getPayload(),
-                                                                            serviceRef)));
+                            applyRuleToTargets(event);
                         }
                         break;
                     default:
                         throw new UnsupportedOperationException(event.getEventType().toString());
                 }
+            }
+
+            private void applyRuleToTargets(Event<RuleEvent, Rule> event) {
+                executor.submit(
+                        () -> {
+                            var svcs = platformClient.listUniqueReachableServices();
+                            svcs.stream()
+                                    .filter(
+                                            serviceRef ->
+                                                    registry.applies(
+                                                            event.getPayload(), serviceRef))
+                                    .forEach(
+                                            serviceRef -> activate(event.getPayload(), serviceRef));
+                        });
             }
         };
     }
@@ -179,14 +166,18 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
             public void onEvent(Event<CredentialsEvent, String> event) {
                 switch (event.getEventType()) {
                     case ADDED:
-                        credentialsManager
-                                .resolveMatchingTargets(event.getPayload())
-                                .forEach(
-                                        sr -> {
-                                            registry.getRules(sr).stream()
-                                                    .filter(Rule::isEnabled)
-                                                    .forEach(rule -> activate(rule, sr));
-                                        });
+                        executor.submit(
+                                () -> {
+                                    credentialsManager
+                                            .resolveMatchingTargets(event.getPayload())
+                                            .forEach(
+                                                    sr -> {
+                                                        registry.getRules(sr).stream()
+                                                                .filter(Rule::isEnabled)
+                                                                .forEach(
+                                                                        rule -> activate(rule, sr));
+                                                    });
+                                });
                         break;
                     case REMOVED:
                         break;
@@ -202,13 +193,16 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
         switch (tde.getEventKind()) {
             case FOUND:
                 if (!platformClient.contains(tde.getServiceRef())) {
-                    registry.getRules(tde.getServiceRef())
-                            .forEach(
-                                    rule -> {
-                                        if (rule.isEnabled()) {
-                                            activate(rule, tde.getServiceRef());
-                                        }
-                                    });
+                    executor.submit(
+                            () -> {
+                                registry.getRules(tde.getServiceRef())
+                                        .forEach(
+                                                rule -> {
+                                                    if (rule.isEnabled()) {
+                                                        activate(rule, tde.getServiceRef());
+                                                    }
+                                                });
+                            });
                 }
                 break;
             case LOST:
@@ -240,71 +234,58 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
         this.logger.trace(
                 "Activating rule {} for target {}", rule.getName(), serviceRef.getServiceUri());
 
-        vertx.<Credentials>executeBlocking(
-                        promise -> {
-                            try {
-                                Credentials creds = credentialsManager.getCredentials(serviceRef);
-                                promise.complete(creds);
-                            } catch (ScriptException e) {
-                                promise.fail(e);
-                            }
-                        })
-                .onSuccess(c -> logger.trace("Rule activation successful"))
-                .onSuccess(
-                        credentials -> {
-                            if (rule.isArchiver()) {
-                                try {
-                                    archiveRuleRecording(
-                                            new ConnectionDescriptor(serviceRef, credentials),
-                                            rule);
-                                } catch (Exception e) {
-                                    logger.error(e);
-                                }
-                            } else {
-                                try {
-                                    startRuleRecording(
-                                            new ConnectionDescriptor(serviceRef, credentials),
-                                            rule);
-                                } catch (Exception e) {
-                                    logger.error(e);
-                                }
+        Credentials credentials = null;
+        try {
+            credentials = credentialsManager.getCredentials(serviceRef);
+        } catch (ScriptException se) {
+            logger.error(se);
+            return;
+        }
+        if (rule.isArchiver()) {
+            try {
+                archiveRuleRecording(new ConnectionDescriptor(serviceRef, credentials), rule);
+            } catch (Exception e) {
+                logger.error(e);
+            }
+        } else {
+            try {
+                startRuleRecording(new ConnectionDescriptor(serviceRef, credentials), rule);
+            } catch (Exception e) {
+                logger.error(e);
+            }
 
-                                PeriodicArchiver periodicArchiver =
-                                        periodicArchiverFactory.create(
-                                                serviceRef,
-                                                credentialsManager,
-                                                rule,
-                                                recordingArchiveHelper,
-                                                this::archivalFailureHandler);
-                                Pair<ServiceRef, Rule> key = Pair.of(serviceRef, rule);
-                                Set<Long> ids = tasks.computeIfAbsent(key, k -> new HashSet<>());
-                                int initialDelay = rule.getInitialDelaySeconds();
-                                int archivalPeriodSeconds = rule.getArchivalPeriodSeconds();
-                                if (initialDelay <= 0) {
-                                    initialDelay = archivalPeriodSeconds;
-                                }
-                                if (rule.getPreservedArchives() <= 0
-                                        || archivalPeriodSeconds <= 0) {
-                                    return;
-                                }
-                                long initialTask =
-                                        vertx.setTimer(
-                                                Duration.ofSeconds(initialDelay).toMillis(),
-                                                initialId -> {
-                                                    tasks.get(key).remove(initialId);
-                                                    periodicArchiver.run();
-                                                    long periodicTask =
-                                                            vertx.setPeriodic(
-                                                                    Duration.ofSeconds(
-                                                                                    archivalPeriodSeconds)
-                                                                            .toMillis(),
-                                                                    periodicId ->
-                                                                            periodicArchiver.run());
-                                                    ids.add(periodicTask);
-                                                });
-                                ids.add(initialTask);
-                            }
-                        });
+            PeriodicArchiver periodicArchiver =
+                    periodicArchiverFactory.create(
+                            serviceRef,
+                            credentialsManager,
+                            rule,
+                            recordingArchiveHelper,
+                            this::archivalFailureHandler);
+            Pair<ServiceRef, Rule> key = Pair.of(serviceRef, rule);
+            Set<Long> ids = tasks.computeIfAbsent(key, k -> new HashSet<>());
+            int initialDelay = rule.getInitialDelaySeconds();
+            int archivalPeriodSeconds = rule.getArchivalPeriodSeconds();
+            if (initialDelay <= 0) {
+                initialDelay = archivalPeriodSeconds;
+            }
+            if (rule.getPreservedArchives() <= 0 || archivalPeriodSeconds <= 0) {
+                return;
+            }
+            long initialTask =
+                    vertx.setTimer(
+                            Duration.ofSeconds(initialDelay).toMillis(),
+                            initialId -> {
+                                tasks.get(key).remove(initialId);
+                                periodicArchiver.run();
+                                long periodicTask =
+                                        vertx.setPeriodic(
+                                                Duration.ofSeconds(archivalPeriodSeconds)
+                                                        .toMillis(),
+                                                periodicId -> periodicArchiver.run());
+                                ids.add(periodicTask);
+                            });
+            ids.add(initialTask);
+        }
     }
 
     private void deactivate(Rule rule, ServiceRef serviceRef) {
@@ -335,31 +316,28 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
     }
 
     private Void archivalFailureHandler(Pair<ServiceRef, Rule> key) {
-        tasks.get(key).forEach(vertx::cancelTimer);
+        Optional.ofNullable(tasks.get(key)).ifPresent(tasks -> tasks.forEach(vertx::cancelTimer));
         tasks.remove(key);
         return null;
     }
 
     private void archiveRuleRecording(ConnectionDescriptor connectionDescriptor, Rule rule) {
         try {
-            targetConnectionManager
-                    .executeConnectedTaskAsync(
-                            connectionDescriptor,
-                            connection -> {
-                                IRecordingDescriptor descriptor =
-                                        connection.getService().getSnapshotRecording();
-                                try {
-                                    recordingArchiveHelper
-                                            .saveRecording(
-                                                    connectionDescriptor, descriptor.getName())
-                                            .get();
-                                } finally {
-                                    connection.getService().close(descriptor);
-                                }
+            targetConnectionManager.executeConnectedTask(
+                    connectionDescriptor,
+                    connection -> {
+                        IRecordingDescriptor descriptor =
+                                connection.getService().getSnapshotRecording();
+                        try {
+                            recordingArchiveHelper
+                                    .saveRecording(connectionDescriptor, descriptor.getName())
+                                    .get();
+                        } finally {
+                            connection.getService().close(descriptor);
+                        }
 
-                                return null;
-                            })
-                    .get();
+                        return null;
+                    });
         } catch (Exception e) {
             logger.error(new RuleException(e));
         }

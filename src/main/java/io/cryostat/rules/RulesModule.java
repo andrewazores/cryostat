@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 
 import javax.inject.Named;
@@ -128,6 +129,7 @@ public abstract class RulesModule {
         return new RuleProcessor(
                 vertx,
                 storage,
+                ForkJoinPool.commonPool(),
                 registry,
                 credentialsManager,
                 recordingOptionsBuilderFactory,
