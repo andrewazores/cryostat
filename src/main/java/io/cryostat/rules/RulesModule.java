@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 
@@ -115,7 +116,6 @@ public abstract class RulesModule {
     @Provides
     @Singleton
     static RuleProcessor provideRuleProcessor(
-            Vertx vertx,
             DiscoveryStorage storage,
             RuleRegistry registry,
             CredentialsManager credentialsManager,
@@ -127,8 +127,8 @@ public abstract class RulesModule {
             PeriodicArchiverFactory periodicArchiverFactory,
             Logger logger) {
         return new RuleProcessor(
-                vertx,
                 storage,
+                Executors.newSingleThreadScheduledExecutor(),
                 ForkJoinPool.commonPool(),
                 registry,
                 credentialsManager,

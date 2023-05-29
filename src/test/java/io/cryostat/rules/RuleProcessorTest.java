@@ -22,6 +22,9 @@ import java.net.URI;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import org.openjdk.jmc.common.unit.IConstrainedMap;
@@ -30,7 +33,6 @@ import org.openjdk.jmc.rjmx.services.jfr.IFlightRecorderService;
 import org.openjdk.jmc.rjmx.services.jfr.IRecordingDescriptor;
 
 import io.cryostat.DirectExecutorService;
-import io.cryostat.MockVertx;
 import io.cryostat.configuration.CredentialsManager;
 import io.cryostat.configuration.CredentialsManager.CredentialsEvent;
 import io.cryostat.core.log.Logger;
@@ -52,8 +54,6 @@ import io.cryostat.recordings.RecordingTargetHelper.ReplacementPolicy;
 import io.cryostat.util.events.Event;
 import io.cryostat.util.events.EventListener;
 
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
 import org.apache.commons.lang3.tuple.Pair;
 import org.hamcrest.MatcherAssert;
 import org.hamcrest.Matchers;
@@ -72,8 +72,8 @@ import org.mockito.stubbing.Answer;
 class RuleProcessorTest {
 
     RuleProcessor processor;
-    Vertx vertx;
     @Mock PlatformClient platformClient;
+    @Mock ScheduledExecutorService scheduler;
     ExecutorService executor = new DirectExecutorService();
     @Mock RuleRegistry registry;
     @Mock CredentialsManager credentialsManager;
@@ -90,11 +90,10 @@ class RuleProcessorTest {
 
     @BeforeEach
     void setup() {
-        this.vertx = MockVertx.vertx();
         this.processor =
                 new RuleProcessor(
-                        vertx,
                         platformClient,
+                        scheduler,
                         executor,
                         registry,
                         credentialsManager,
@@ -239,17 +238,16 @@ class RuleProcessorTest {
 
         MatcherAssert.assertThat(metadataCaptor.getValue(), Matchers.equalTo(new Metadata()));
 
-        ArgumentCaptor<Handler<Long>> handlerCaptor = ArgumentCaptor.forClass(Handler.class);
-        Mockito.verify(vertx).setTimer(Mockito.eq(67_000L), handlerCaptor.capture());
-
-        Mockito.verify(periodicArchiver, Mockito.times(0)).run();
-        handlerCaptor.getValue().handle(1234L);
-        Mockito.verify(periodicArchiver, Mockito.times(1)).run();
-
-        Mockito.verify(vertx).setPeriodic(Mockito.eq(67_000L), handlerCaptor.capture());
-
-        handlerCaptor.getValue().handle(1234L);
-        Mockito.verify(periodicArchiver, Mockito.times(2)).run();
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        Mockito.verify(scheduler)
+                .scheduleAtFixedRate(
+                        runnableCaptor.capture(),
+                        Mockito.eq(67L),
+                        Mockito.eq(67L),
+                        Mockito.same(TimeUnit.SECONDS));
+        Mockito.verify(periodicArchiver, Mockito.never()).run();
+        runnableCaptor.getValue().run();
+        Mockito.verify(periodicArchiver).run();
     }
 
     @Test
@@ -348,9 +346,18 @@ class RuleProcessorTest {
                                 Mockito.any()))
                 .thenReturn(periodicArchiver);
 
+        ScheduledFuture future = Mockito.mock(ScheduledFuture.class);
+        Mockito.when(
+                        scheduler.scheduleAtFixedRate(
+                                Mockito.any(), Mockito.anyLong(), Mockito.anyLong(), Mockito.any()))
+                .thenReturn(future);
+
         processor.accept(tde);
 
-        Mockito.verify(vertx).setTimer(Mockito.eq(67_000L), Mockito.any());
+        Mockito.verify(scheduler)
+                .scheduleAtFixedRate(
+                        Mockito.any(), Mockito.anyLong(), Mockito.anyLong(), Mockito.any());
+        Mockito.verify(future, Mockito.never()).cancel(Mockito.anyBoolean());
 
         ArgumentCaptor<Function<Pair<ServiceRef, Rule>, Void>> functionCaptor =
                 ArgumentCaptor.forClass(Function.class);
@@ -362,11 +369,10 @@ class RuleProcessorTest {
                         Mockito.any(),
                         functionCaptor.capture());
         Function<Pair<ServiceRef, Rule>, Void> failureFunction = functionCaptor.getValue();
-        Mockito.verify(vertx, Mockito.never()).cancelTimer(MockVertx.TIMER_ID);
 
         failureFunction.apply(Pair.of(serviceRef, rule));
 
-        Mockito.verify(vertx).cancelTimer(MockVertx.TIMER_ID);
+        Mockito.verify(future).cancel(Mockito.anyBoolean());
     }
 
     @Test

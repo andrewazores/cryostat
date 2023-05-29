@@ -16,17 +16,19 @@
 package io.cryostat.rules;
 
 import java.io.IOException;
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import javax.script.ScriptException;
@@ -55,12 +57,12 @@ import io.cryostat.util.events.Event;
 import io.cryostat.util.events.EventListener;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Vertx;
 import org.apache.commons.lang3.tuple.Pair;
 
 public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDiscoveryEvent> {
 
     private final PlatformClient platformClient;
+    private final ScheduledExecutorService scheduler;
     private final ExecutorService executor;
     private final RuleRegistry registry;
     private final CredentialsManager credentialsManager;
@@ -72,11 +74,11 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
     private final PeriodicArchiverFactory periodicArchiverFactory;
     private final Logger logger;
 
-    private final Map<Pair<ServiceRef, Rule>, Set<Long>> tasks;
+    private final Map<Pair<ServiceRef, Rule>, List<Future<?>>> tasks;
 
     RuleProcessor(
-            Vertx vertx,
             PlatformClient platformClient,
+            ScheduledExecutorService scheduler,
             ExecutorService executor,
             RuleRegistry registry,
             CredentialsManager credentialsManager,
@@ -87,8 +89,8 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
             RecordingMetadataManager metadataManager,
             PeriodicArchiverFactory periodicArchiverFactory,
             Logger logger) {
-        this.vertx = vertx;
         this.platformClient = platformClient;
+        this.scheduler = scheduler;
         this.executor = executor;
         this.registry = registry;
         this.credentialsManager = credentialsManager;
@@ -113,7 +115,7 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
     @Override
     public void stop() {
         this.platformClient.removeTargetDiscoveryListener(this);
-        this.tasks.forEach((ruleExecution, ids) -> ids.forEach(vertx::cancelTimer));
+        this.tasks.forEach((ruleExecution, tasks) -> tasks.forEach(task -> task.cancel(true)));
         this.tasks.clear();
     }
 
@@ -262,29 +264,21 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
                             recordingArchiveHelper,
                             this::archivalFailureHandler);
             Pair<ServiceRef, Rule> key = Pair.of(serviceRef, rule);
-            Set<Long> ids = tasks.computeIfAbsent(key, k -> new HashSet<>());
-            int initialDelay = rule.getInitialDelaySeconds();
-            int archivalPeriodSeconds = rule.getArchivalPeriodSeconds();
+            List<Future<?>> t = tasks.computeIfAbsent(key, k -> new ArrayList<>());
+            long initialDelay = rule.getInitialDelaySeconds();
+            long archivalPeriodSeconds = rule.getArchivalPeriodSeconds();
             if (initialDelay <= 0) {
                 initialDelay = archivalPeriodSeconds;
             }
             if (rule.getPreservedArchives() <= 0 || archivalPeriodSeconds <= 0) {
                 return;
             }
-            long initialTask =
-                    vertx.setTimer(
-                            Duration.ofSeconds(initialDelay).toMillis(),
-                            initialId -> {
-                                tasks.get(key).remove(initialId);
-                                periodicArchiver.run();
-                                long periodicTask =
-                                        vertx.setPeriodic(
-                                                Duration.ofSeconds(archivalPeriodSeconds)
-                                                        .toMillis(),
-                                                periodicId -> periodicArchiver.run());
-                                ids.add(periodicTask);
-                            });
-            ids.add(initialTask);
+            t.add(
+                    scheduler.scheduleAtFixedRate(
+                            periodicArchiver::run,
+                            initialDelay,
+                            archivalPeriodSeconds,
+                            TimeUnit.SECONDS));
         }
     }
 
@@ -298,25 +292,22 @@ public class RuleProcessor extends AbstractVerticle implements Consumer<TargetDi
         if (serviceRef != null) {
             logger.trace("Deactivating rules for {}", serviceRef.getServiceUri());
         }
-        Iterator<Map.Entry<Pair<ServiceRef, Rule>, Set<Long>>> it = tasks.entrySet().iterator();
+        Iterator<Map.Entry<Pair<ServiceRef, Rule>, List<Future<?>>>> it =
+                tasks.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Pair<ServiceRef, Rule>, Set<Long>> entry = it.next();
+            Map.Entry<Pair<ServiceRef, Rule>, List<Future<?>>> entry = it.next();
             boolean sameRule = Objects.equals(entry.getKey().getRight(), rule);
             boolean sameTarget = Objects.equals(entry.getKey().getLeft(), serviceRef);
             if (sameRule || sameTarget) {
-                Set<Long> ids = entry.getValue();
-                ids.forEach(
-                        (id) -> {
-                            vertx.cancelTimer(id);
-                            logger.trace("Cancelled timer {}", id);
-                        });
+                List<Future<?>> t = entry.getValue();
+                t.forEach(f -> f.cancel(true));
                 it.remove();
             }
         }
     }
 
     private Void archivalFailureHandler(Pair<ServiceRef, Rule> key) {
-        Optional.ofNullable(tasks.get(key)).ifPresent(tasks -> tasks.forEach(vertx::cancelTimer));
+        Optional.ofNullable(tasks.get(key)).ifPresent(tasks -> tasks.forEach(f -> f.cancel(true)));
         tasks.remove(key);
         return null;
     }
