@@ -120,22 +120,23 @@ public class TargetConnectionManager {
 
     public <T> CompletableFuture<T> executeConnectedTaskAsync(
             ConnectionDescriptor connectionDescriptor, ConnectedTask<T> task) {
-        synchronized (
-                targetLocks.computeIfAbsent(
-                        connectionDescriptor.getTargetId(), k -> new Object())) {
-            return connections
-                    .get(connectionDescriptor)
-                    .thenApplyAsync(
-                            conn -> {
-                                try {
+        return connections
+                .get(connectionDescriptor)
+                .thenApplyAsync(
+                        conn -> {
+                            try {
+                                synchronized (
+                                        targetLocks.computeIfAbsent(
+                                                connectionDescriptor.getTargetId(),
+                                                k -> new Object())) {
                                     return task.execute(conn);
-                                } catch (Exception e) {
-                                    logger.error(e);
-                                    throw new CompletionException(e);
                                 }
-                            },
-                            executor);
-        }
+                            } catch (Exception e) {
+                                logger.error(e);
+                                throw new CompletionException(e);
+                            }
+                        },
+                        executor);
     }
 
     public <T> T executeConnectedTask(
