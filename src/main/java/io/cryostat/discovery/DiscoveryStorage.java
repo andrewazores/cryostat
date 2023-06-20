@@ -219,11 +219,15 @@ public class DiscoveryStorage extends AbstractPlatformClientVerticle {
         if (StringUtils.isNotBlank(userInfo) && userInfo.contains(":")) {
             String[] parts = userInfo.split(":");
             if ("storedcredentials".equals(parts[0])) {
+                int stored = Integer.parseInt(parts[1]);
+                if (stored < 0) {
+                    return Future.succeededFuture(false);
+                }
                 logger.info(
                         "Using stored credentials id:{} referenced in ping callback userinfo",
-                        parts[1]);
+                        stored);
                 Optional<StoredCredentials> opt =
-                        credentialsManager.get().getById(Integer.parseInt(parts[1]));
+                        credentialsManager.get().getById(stored);
                 if (opt.isEmpty()) {
                     logger.warn("Could not find such credentials!");
                     return Future.succeededFuture(false);
