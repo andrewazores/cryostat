@@ -61,6 +61,8 @@ import io.vertx.ext.web.client.WebClientOptions;
         })
 public abstract class NetworkModule {
 
+    static final String AGENT_WEB_CLIENT = "AGENT_WEB_CLIENT";
+
     @Provides
     @Singleton
     static HttpServer provideHttpServer(
@@ -107,10 +109,27 @@ public abstract class NetworkModule {
 
     @Provides
     @Singleton
+    @Named(AGENT_WEB_CLIENT)
+    static WebClient provideAgentWebClient(Vertx vertx, NetworkConfiguration netConf) {
+        WebClientOptions opts =
+                new WebClientOptions()
+                        .setSsl(true)
+                        .setFollowRedirects(true)
+                        .setTryUseCompression(true);
+        // TODO separate this configuration, trust settings for Agents should be different from
+        // trust settings for jfr-datasource/cryostat-reports that the other WebClient is used for
+        if (netConf.isUntrustedSslAllowed()) {
+            opts = opts.setTrustAll(true).setVerifyHost(false);
+        }
+        return WebClient.create(vertx, opts);
+    }
+
+    @Provides
+    @Singleton
     static AgentClient.Factory provideAgentClientFactory(
             Gson gson,
             @Named(HttpModule.HTTP_REQUEST_TIMEOUT_SECONDS) long httpTimeout,
-            WebClient webClient,
+            @Named(AGENT_WEB_CLIENT) WebClient webClient,
             CredentialsManager credentialsManager,
             Logger logger) {
         return new AgentClient.Factory(
